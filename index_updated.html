@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Consultor Santa Maria - Base Local</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f0f2f5; }
+        #header { padding: 15px 25px; background: #004085; color: white; display: flex; gap: 15px; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 1000; }
+        #search-input { padding: 10px; border-radius: 5px; border: none; width: 250px; font-size: 14px; }
+        #main { display: flex; flex: 1; overflow: hidden; }
+        #sidebar { width: 380px; overflow-y: auto; padding: 20px; background: white; border-right: 1px solid #ddd; }
+        #map { flex: 1; }
+        .card { background: #fff; padding: 15px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #eee; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; }
+        .main-card { border-left: 5px solid #28a745; background: #f0fff4; }
+        .status-ativa { color: #28a745; font-weight: bold; }
+        .status-cortada { color: #dc3545; font-weight: bold; }
+        .status-corte\ pedido { color: #fd7e14; font-weight: bold; }
+        h3 { margin: 0 0 10px 0; color: #004085; }
+        .distancia { font-weight: bold; color: #007bff; }
+        #status-base { font-size: 12px; color: #cce5ff; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <strong>📍 Consultor Santa Maria</strong>
+    <input type="text" id="search-input" placeholder="N° da Ligação..." onkeydown="if(event.key==='Enter') buscar()">
+    <button onclick="buscar()" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">BUSCAR</button>
+    <span id="status-base">Carregando dados...</span>
+</div>
+
+<div id="main">
+    <div id="sidebar">
+        <div id="resultado">Digite uma ligação para começar.</div>
+        <div id="proximos"></div>
+    </div>
+    <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let baseDados = [];
+    let map = L.map('map').setView([-29.684, -53.806], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let markers = [];
+
+    // CARREGA O JSON AUTOMATICAMENTE
+    fetch('dados_imoveis.json')
+        .then(response => response.json())
+        .then(data => {
+            baseDados = data;
+            document.getElementById('status-base').innerText = "Base: " + data.length + " imóveis prontos.";
+        })
+        .catch(err => {
+            document.getElementById('status-base').innerText = "Erro ao carregar JSON!";
+            console.error(err);
+        });
+
+    function calcularDistancia(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1000;
+    }
+
+    function buscar() {
+        const termo = document.getElementById('search-input').value.trim();
+        const imovel = baseDados.find(i => String(i.id) === termo);
+        
+        if (!imovel) return alert("Ligação não encontrada!");
+
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+
+        const lat = parseFloat(imovel.lat);
+        const lon = parseFloat(imovel.lon);
+
+        document.getElementById('resultado').innerHTML = `
+            <div class="card main-card">
+                <h3>✅ Localizado</h3>
+                <p><strong>Ligação:</strong> ${imovel.id}</p>
+                <p><strong>Endereço:</strong> ${imovel.end}</p>
+                <p><strong>Bairro:</strong> ${imovel.bairro}</p>
+                <p><strong>Situação:</strong> <span class="status-${imovel.sit.toLowerCase().replace(' ', '-')}">${imovel.sit}</span></p>
+                <p><strong>Medidor:</strong> ${imovel.med}</p>
+            </div>
+            <hr><h4>🏠 Vizinhos Próximos:</h4>
+        `;
+
+        map.setView([lat, lon], 18);
+        markers.push(L.marker([lat, lon]).addTo(map).bindPopup("Alvo").openPopup());
+
+        const proximos = baseDados
+            .filter(i => String(i.id) !== termo)
+            .map(i => ({ ...i, dist: calcularDistancia(lat, lon, i.lat, i.lon) }))
+            .sort((a, b) => a.dist - b.dist)
+            .slice(0, 5);
+
+        let html = "";
+        proximos.forEach(p => {
+            html += `
+                <div class="card" onclick="map.setView([${p.lat}, ${p.lon}], 19)">
+                    <p><span class="distancia">📍 ${p.dist.toFixed(0)}m</span> | Lig: ${p.id}</p>
+                    <p>${p.end}</p>
+                </div>
+            `;
+            markers.push(L.circleMarker([p.lat, p.lon], {color: 'blue', radius: 6}).addTo(map));
+        });
+        document.getElementById('proximos').innerHTML = html;
+    }
+</script>
+</body>
+</html>
